@@ -1,0 +1,17 @@
+# data / weights / logs never enter the repo
+data/
+models/
+ckpt/
+logs/
+*.npy
+*.npz
+*.bin
+*.safetensors
+*.tar.gz
+*.zip
+
+# python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.venv/
