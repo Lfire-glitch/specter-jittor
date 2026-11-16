@@ -16,16 +16,23 @@
 
 - WSL2 Ubuntu，16 核 / 15.38 GB RAM / 951 GB 可用
 - conda env `jittor`：Python 3.12.14 + jittor 1.3.11.0 + numpy 1.26.4
-- **必须 `export cc_path=/usr/bin/g++-12`**（g++15 会报 `uint8_t does not name a type`；非交互 shell 不读 `.bashrc`，所以脚本里要显式 export）
+- torch 2.15.0+cpu（只做权重转换与数值对照）、transformers 5.23.0、sklearn、scipy、igraph、leidenalg
+- **必须 `export cc_path=/usr/bin/g++-12`**（g++15 报 `uint8_t does not name a type`；非交互 shell 不读 `.bashrc`）
 
 ## 里程碑
 
-- M0 环境：✅ 已通过（matmul / grad 数值正确，CPU）
-- M1 权重迁移：单层 → 全模型 forward 与 PyTorch 对齐（cos > 0.9999）
-- M2 训练闭环：万级查询，loss 下降 + 近邻可读
-- M3 采样旋钮：SciNCL 环带采样对照
-- M4 表示形态：CLF / RGN 两格式
-- M5 审计协议：10 万 CS 子图 Leiden 两级
+| 里程碑 | 状态 | 证据 |
+|---|---|---|
+| M0 环境 | ✅ | `docs/00_env.md` |
+| M1 权重迁移对齐 | ✅ 2026-11-16 | `docs/01_m1_alignment.md`：13 层 cos=1.00000000，`transposed=0` |
+| M2 训练闭环 | 待做 | 万级查询，margin loss 下降 + 近邻可读 |
+| M3 采样旋钮 | 待做 | SciNCL 环带采样对照 |
+| M4 表示形态 | 待做 | CLF / RGN 两格式 |
+| M5 审计协议 | 待做 | 10 万 CS 子图 Leiden 两级 |
+
+## 重要更正
+
+Jittor `nn.Linear` 权重是 `[out, in]`，**与 PyTorch 相同，不需要转置**（实测 + `transposed=0`）。
 
 ## 纪律
 
