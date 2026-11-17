@@ -29,8 +29,7 @@ class BertEmbeddings(Module):
             token_type_ids = jt.zeros_like(input_ids)
         b, l = input_ids.shape
         pos = jt.arange(l, dtype='int32').unsqueeze(0) + jt.zeros((b, 1), dtype='int32')
-        x = self.word_embeddings(input_ids) + self.position_embeddings(pos) \
-            + self.token_type_embeddings(token_type_ids)
+        x = self.word_embeddings(input_ids) + self.position_embeddings(pos)+ self.token_type_embeddings(token_type_ids)
         return self.dropout(self.LayerNorm(x))
 
 
