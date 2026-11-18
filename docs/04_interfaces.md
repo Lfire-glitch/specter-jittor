@@ -8,7 +8,7 @@
 | 接口 | 位置 | 签名 | 换的变量 | 冻结的变量 |
 |---|---|---|---|---|
 | 1 嵌入导出 | `src/model/encoder.py` | `encode(texts, fmt=None, normalize=False) -> np.ndarray[n,768]` | 权重（构造参数） | 编码器/分词/取 [CLS] |
-| 2 采样策略 | `src/data/triplets.py` | `build_triplets(mode='citation'/'random'/'knn_ring') -> list[dict]` | 采样策略 | q/pos 集合、数据规模 |
+| 2 采样策略 | `src/data/triplets.py` | `build_triplets(mode='citation'/'random'/'knn_ring') -> list[dict]` | 采样策略 | q 集合、数据规模 |
 | 3 表示形态 | `src/model/encoder.py` | `encode(..., fmt=None/'clf'/'rgn')` | 表示形态 | 编码器、训练数据 |
 
 ## 四条边界决策（回归纪律）
@@ -23,7 +23,12 @@
 4. **`build_triplets('citation')` 读落盘表**，不重写 `10` 的采样逻辑。
    追求"产物一致"而非"过程一致"：生成逻辑挂着 `random` 全局状态、OpenAlex 返回顺序、
    242 篇过滤等隐含随机性，重跑一遍得到的会是另一张表，M2 即不可复现。
-   读表 = 引用同一个数据对象，保证单一事实来源 + M4 控制变量（q/pos 冻结，只换 negs）。
+   读表 = 引用同一个数据对象，保证单一事实来源 + M4 控制变量。
+
+   注：② 环带采样实装时 `KEEP_CITATION_POS=False`，pos 也从 `k+` 带采，pos 集合随之
+   改变 —— 实际是「策略级对比」而非逐行「只换 negs」。冻结的是 q 集合 / 数据规模 /
+   编码器 / margin loss / 评测尺。改 `True` 即退化为严格逐行对照。
+   详见 `docs/05_m4_ring.md` 第 5 节，差异不藏。
 
 ## 回归校验（`scripts/13_regression.py`，PASS）
 
@@ -33,11 +38,19 @@
 | A2 | `normalize=True` 行范数 | 1.0000 |
 | B | `build_triplets('citation')` == `triplets.jsonl` | True, 2758 rows |
 | C | `fmt='clf'` 抛 NotImplementedError | True |
+| D | `build_triplets('knn_ring')` == `triplets_knn_ring.jsonl` | True, 2758 rows |
 
-A 的逐位相同 = 接口化后 `02/03` 数字一个不差，无需重算。
+A 的逐位相同 = 接口化后 `02/03` 数字一个不差，无需重算；D = ② 接口接入后读表与
+落盘产物逐行相等，且 `A/A2/B/C` 四闸未受污染。
 
-## 待办（② M4）
+## ② M4 已实现（2026-11-18，原「待办」已销项）
 
-`knn_ring` 分支当前抛 NotImplementedError，任务 ② 实现：用训好的嵌入对
-8421 篇训练语料自举 kNN 邻域表，正例带 `k⁺∈[20,25]`、难负例带 `k⁻∈[3998,4000]`、
-两带之间不采，同尺对比 citation vs knn_ring 的 lift。
+`knn_ring` 分支不再抛异常：`scripts/15_build_knn_ring.py` 用 `scibert-tuned.npz`
+对 8421 篇训练语料自举 kNN 邻域表，按 `k⁺∈[20,25]` / `k⁻∈[3998,4000]`、
+两带之间不采，产出 `triplets_knn_ring.jsonl`（2758 行）；
+`build_triplets('knn_ring')` 读该落盘表（D 闸验证）。真实数据方向对齐 PASS：
+`cos_pos_band 0.8857 > cos_neg_band 0.6807`。详见 `docs/05_m4_ring.md`。
+
+诚实边界：8421 池里 `rank 4000` ≈ 中位数，`cos_neg_band 0.6807 ≈ cos_citation_neg 0.6763`，
+难负带未体现原文「几十万池取前 1%」的难度增益；且本阶段**未**跑下游训练 +
+同尺 lift 对照，该开放项按「默认全轻量级」纪律由用户拍板。

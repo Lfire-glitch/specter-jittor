@@ -25,10 +25,14 @@
 |---|---|---|
 | M0 环境 | ✅ | `docs/00_env.md` |
 | M1 权重迁移对齐 | ✅ 2026-11-16 | `docs/01_m1_alignment.md`：13 层 cos=1.00000000，`transposed=0` |
-| M2 训练闭环 | 待做 | 万级查询，margin loss 下降 + 近邻可读 |
-| M3 采样旋钮 | 待做 | SciNCL 环带采样对照 |
-| M4 表示形态 | 待做 | CLF / RGN 两格式 |
-| M5 审计协议 | 待做 | 10 万 CS 子图 Leiden 两级 |
+| M2 SciBERT 基线 + 训练闭环 | ✅ 2026-11-17 | `docs/02_scibert_baseline.md`、`docs/03_m2_closed_loop.md`：margin loss，同尺 MAG +0.193 / MeSH +0.424 |
+| M3 三接口收敛 ① | ✅ 2026-11-18 | `docs/04_interfaces.md`：encode/fmt/build_triplets，四闸回归 PASS |
+| M4 SciNCL 环带采样 ② | ✅ 2026-11-18 | `docs/05_m4_ring.md`：k+/k- 环带，方向对齐 PASS（cos 0.8857 > 0.6807） |
+| M5 表示形态 | 待做 | CLF / RGN 两格式（encoder fmt 扩展点已立） |
+| M6 审计协议 | 待做 | 10 万 CS 子图 Leiden 两级 |
+
+注：表内 M3/M4 为本表早期顺序编号；`docs/04`、`docs/05` 按任务 ①/② 叙述，
+对应的 ① = 三接口收敛、② = SciNCL 环带采样，M5/M6 排队未开工。
 
 ## 重要更正
 
@@ -36,4 +40,7 @@ Jittor `nn.Linear` 权重是 `[out, in]`，**与 PyTorch 相同，不需要转�
 
 ## 纪律
 
-数字只来自论文原文 txt 或代码输出；每个里程碑先贴命令与输出，再下结论。
+- 默认全轻量级：不下 16 GB `train.pkl`、不跑 48k 全量重编码；报告重点是技术复现与机制成立，
+  不是验证已有轮子或刷绝对分数。
+- 数字只来自论文原文 txt 或代码输出；每个里程碑先贴命令与输出，再下结论。
+- 本地提交持续累积，**最后一并推送**（WSL NAT 无法直连 Windows 代理）。

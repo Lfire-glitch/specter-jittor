@@ -1,8 +1,11 @@
 # data / weights / logs never enter the repo
-data/
-models/
-ckpt/
-logs/
+# NOTE: anchor dir rules to repo root with leading '/', otherwise a bare
+# 'data/' also matches ANY nested dir named 'data' (e.g. src/data/) and
+# would silently exclude source code. Verified with: git check-ignore -v
+/data/
+/models/
+/ckpt/
+/logs/
 *.npy
 *.npz
 *.bin

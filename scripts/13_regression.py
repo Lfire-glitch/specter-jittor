@@ -1,10 +1,12 @@
-"""13: 接口化回归校验 —— ① 收敛后, 02/03 已归档数字一个不差。
+"""13: 接口化回归校验 —— ① 收敛后, 02/03 已归档数字一个不差; ② 环带表可读。
 
-三道闸 (全部来自代码输出, 不引用记忆里的数字):
+四道闸 (全部来自代码输出, 不引用记忆里的数字):
   A. PaperEncoder.encode(fmt=None, normalize=False) 对 light 前 48 篇的输出
      与 scibert-embeddings-light.npy 前 48 行逐位一致 (cos>0.9999, max_abs<1e-4)
   B. build_triplets('citation') 与 triplets.jsonl 逐行逐字段相等
   C. fmt='clf' 抛 NotImplementedError (接口形状存在); normalize=True 行范数≈1
+  D. build_triplets('knn_ring') 与 triplets_knn_ring.jsonl 逐行逐字段相等
+     (读落盘表, 不重写采样逻辑 —— 与 citation 分支对称)
 """
 import json
 import os
@@ -62,6 +64,13 @@ def main():
         raised = True
     print(f'[C ] fmt=clf raises NotImplementedError  {raised}')
     checks.append(('C', raised))
+
+    # D: knn_ring 分支读落盘表, 逐行逐字段相等 (产物一致, 非过程一致)
+    ring = build_triplets('knn_ring')
+    raw_ring = [json.loads(l) for l in open(os.path.join(T, 'triplets_knn_ring.jsonl'))]
+    same_ring = (ring == raw_ring)
+    print(f'[D ] knn_ring == triplets_knn_ring.jsonl  {same_ring}  ({len(ring)} rows)')
+    checks.append(('D', same_ring and len(ring) == len(raw_ring) and len(ring) > 0))
 
     print('VERDICT:', 'PASS' if all(v for _, v in checks) else 'FAIL')
     sys.exit(0 if all(v for _, v in checks) else 1)
