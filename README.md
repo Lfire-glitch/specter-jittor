@@ -28,11 +28,12 @@
 | M2 SciBERT 基线 + 训练闭环 | ✅ 2026-11-17 | `docs/02_scibert_baseline.md`、`docs/03_m2_closed_loop.md`：margin loss，同尺 MAG +0.193 / MeSH +0.424 |
 | M3 三接口收敛 ① | ✅ 2026-11-18 | `docs/04_interfaces.md`：encode/fmt/build_triplets，四闸回归 PASS |
 | M4 SciNCL 环带采样 ② | ✅ 2026-11-18 | `docs/05_m4_ring.md`：k+/k- 环带，方向对齐 PASS（cos 0.8857 > 0.6807） |
-| M5 表示形态 | 待做 | CLF / RGN 两格式（encoder fmt 扩展点已立） |
+| M5 表示形态（控制码） | ✅ 2026-11-19 | `docs/06_m5_formats.md`：`fmt='clf'/'rgn'` 真通路，六闸回归 PASS；仅形状成立，格式尚不可分（无训练权重） |
 | M6 审计协议 | 待做 | 10 万 CS 子图 Leiden 两级 |
 
 注：表内 M3/M4 为本表早期顺序编号；`docs/04`、`docs/05` 按任务 ①/② 叙述，
-对应的 ① = 三接口收敛、② = SciNCL 环带采样，M5/M6 排队未开工。
+对应的 ① = 三接口收敛、② = SciNCL 环带采样。M6 排队未开工；
+M5 为机制/形状复现，非论文效果复现，诚实边界见 `docs/06` 第 6 节。
 
 ## 重要更正
 
