@@ -26,14 +26,15 @@
 | M0 环境 | ✅ | `docs/00_env.md` |
 | M1 权重迁移对齐 | ✅ 2026-11-16 | `docs/01_m1_alignment.md`：13 层 cos=1.00000000，`transposed=0` |
 | M2 SciBERT 基线 + 训练闭环 | ✅ 2026-11-17 | `docs/02_scibert_baseline.md`、`docs/03_m2_closed_loop.md`：margin loss，同尺 MAG +0.193 / MeSH +0.424 |
-| M3 三接口收敛 ① | ✅ 2026-11-18 | `docs/04_interfaces.md`：encode/fmt/build_triplets，四闸回归 PASS |
+| M3 三接口收敛 ① | ✅ 2026-11-18 | `docs/04_interfaces.md`：encode/fmt/build_triplets，回归 PASS |
 | M4 SciNCL 环带采样 ② | ✅ 2026-11-18 | `docs/05_m4_ring.md`：k+/k- 环带，方向对齐 PASS（cos 0.8857 > 0.6807） |
-| M5 表示形态（控制码） | ✅ 2026-11-19 | `docs/06_m5_formats.md`：`fmt='clf'/'rgn'` 真通路，六闸回归 PASS；仅形状成立，格式尚不可分（无训练权重） |
+| M5 表示形态（控制码） | ✅ 2026-11-19 | `docs/06_m5_formats.md`：`fmt='clf'/'rgn'` 真通路，接口形状成立 |
+| M5 第二课 格式方向 | ✅ 2026-11-20 | `docs/07_m5_train.md`：冻结主体只训 row2/3，cos(clf,rgn) 0.9992 → 0.6319，七闸回归 PASS |
 | M6 审计协议 | 待做 | 10 万 CS 子图 Leiden 两级 |
 
 注：表内 M3/M4 为本表早期顺序编号；`docs/04`、`docs/05` 按任务 ①/② 叙述，
 对应的 ① = 三接口收敛、② = SciNCL 环带采样。M6 排队未开工；
-M5 为机制/形状复现，非论文效果复现，诚实边界见 `docs/06` 第 6 节。
+M4/M5 均为机制/形状复现，非论文效果复现，诚实边界见各 docs 末节。
 
 ## 重要更正
 
@@ -45,3 +46,5 @@ Jittor `nn.Linear` 权重是 `[out, in]`，**与 PyTorch 相同，不需要转�
   不是验证已有轮子或刷绝对分数。
 - 数字只来自论文原文 txt 或代码输出；每个里程碑先贴命令与输出，再下结论。
 - 本地提交持续累积，**最后一并推送**（WSL NAT 无法直连 Windows 代理）。
+- **Jittor 训练态绝不调 `eval()`**（会 `stop_grad` 全部参数）；推理类 `PaperEncoder` 才可 eval。
+  详见 `docs/07_m5_train.md` 第 2 节。

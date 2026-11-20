@@ -1,4 +1,4 @@
-"""13: 接口化回归校验 —— ①/② 归档数字不变; M5 fmt 接口形状成立。
+"""13: 接口化回归校验 —— ①/② 归档数字不变; M5 fmt 形状成立 + 训练后格式可分。
 
 闸位 (全部来自代码输出, 不引用记忆里的数字):
   A. PaperEncoder.encode(fmt=None, normalize=False) 对 light 前 48 篇的输出
@@ -8,7 +8,11 @@
   C. fmt='xxx' 抛 ValueError (M5 后接口边界; 旧版是 fmt='clf' 抛 NotImplementedError)
   D. build_triplets('knn_ring') 与 triplets_knn_ring.jsonl 逐行逐字段相等
   E. fmt 分支形状: fmt=None 与 fmt='clf' 输出流可区分 + 有限 + 确定性
-     (E* 为记录项, 不作判据: cos(clf,rgn) 未训练控制码下≈1, 格式尚不可分)
+     (E* 为记录项, 不作判据: 未训练控制码下 cos(clf,rgn)≈1, 格式尚不可分)
+  F1. scibert-fmt.npz 仅 word_embeddings.weight 的 row2/3 变, 其余 198 张量逐位相等
+      —— 证明「冻结主体、只训控制码」的梯度 mask 生效, 且无 NaN/Inf
+  F2. 用训后权重在同一 8 篇上 cos(clf,rgn) < 0.9 —— 方向建立
+      (基线 0.9992; max_len=96 与 16_train_fmt.py 的验证口径一致)
 """
 import json
 import os
@@ -24,12 +28,20 @@ from src.data.triplets import build_triplets
 
 D = os.path.join(ROOT, 'data', 'scidocs')
 T = os.path.join(ROOT, 'data', 'training')
+M = os.path.join(ROOT, 'models', 'scibert')
 
 
 def cos(a, b):
     a = a.ravel().astype(np.float64)
     b = b.ravel().astype(np.float64)
     return float(a @ b / (np.linalg.norm(a) * np.linalg.norm(b) + 1e-12))
+
+
+def rows_cos(a, b):
+    """逐行 cosine 后取均值, 与 16_train_fmt.py 的 verify 同口径。"""
+    num = (a * b).sum(1)
+    den = np.linalg.norm(a, axis=1) * np.linalg.norm(b, axis=1) + 1e-12
+    return float((num / den).mean())
 
 
 def main():
@@ -75,7 +87,7 @@ def main():
     checks.append(('D', same_ring and len(ring) == len(raw_ring) and len(ring) > 0))
 
     # E: M5 fmt 分支形状。用同一小 batch 单独 encode, 避免与 A 的 padding 口径混淆。
-    #    只判「输出流确实改变 + 有限 + 确定性」; 不要求 clf/rgn 可分(需训练, 见 E*)。
+    #    只判「输出流确实改变 + 有限 + 确定性」; 格式可分改由 F2(训后)判定。
     sub = [meta[p] for p in ids][:8]
     e_ref = enc.encode(sub)
     e_clf = enc.encode(sub, fmt='clf')
@@ -86,8 +98,32 @@ def main():
     finite = bool(np.isfinite(e_clf).all() and np.isfinite(e_rgn).all())
     det = bool(np.array_equal(e_clf, e_clf2))
     print(f'[E ] cos(None,clf)={c_nc:.4f}  finite={finite}  deterministic={det}')
-    print(f'[E*] cos(clf,rgn)={c_cr:.4f}  (记录项, 不作判据: 控制码未训练, 格式尚不可分)')
+    print(f'[E*] cos(clf,rgn)={c_cr:.4f}  (记录项, 不作判据: 未训练控制码, 格式尚不可分)')
     checks.append(('E', c_nc < 0.9 and finite and det))
+
+    # F1: 训后权重只在 row2/3 两行变化, 其余 198 张量逐位相等 (梯度 mask 生效)
+    w_base = np.load(os.path.join(M, 'scibert.npz'))
+    w_fmt = np.load(os.path.join(M, 'scibert-fmt.npz'))
+    ks = list(w_base.keys())
+    changed = [k for k in ks if not np.array_equal(w_base[k], w_fmt[k])]
+    key = 'embeddings.word_embeddings.weight'
+    drow = np.abs(w_base[key] - w_fmt[key]).max(axis=1)
+    rows = np.where(drow > 0)[0].tolist()
+    all_finite = bool(all(np.isfinite(w_fmt[k]).all() for k in ks))
+    f1 = (changed == [key] and rows == [2, 3] and all_finite)
+    print(f'[F1] changed={changed}  rows={rows}  finite={all_finite}')
+    checks.append(('F1', f1))
+
+    # F2: 训后权重下两格式可分。max_len=96 / 同 8 篇 / rows_cos 与训练 verify 完全同口径。
+    enc_fmt = PaperEncoder(weights=os.path.join(M, 'scibert-fmt.npz'),
+                           max_len=96, batch_size=8)
+    rec = [json.loads(l) for l in open(os.path.join(T, 'fmt_train.jsonl'))][:8]
+    probe = [{'title': r['title'], 'abstract': r['abstract']} for r in rec]
+    ef_clf = enc_fmt.encode(probe, fmt='clf')
+    ef_rgn = enc_fmt.encode(probe, fmt='rgn')
+    c_fmt = rows_cos(ef_clf, ef_rgn)
+    print(f'[F2] cos(clf,rgn) trained={c_fmt:.4f}  < 0.9  (基线 0.9992)')
+    checks.append(('F2', c_fmt < 0.9))
 
     print('VERDICT:', 'PASS' if all(v for _, v in checks) else 'FAIL')
     sys.exit(0 if all(v for _, v in checks) else 1)
