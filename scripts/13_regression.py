@@ -25,6 +25,7 @@ sys.path.insert(0, ROOT)
 
 from src.model.encoder import PaperEncoder
 from src.data.triplets import build_triplets
+from src.data.audit import analytic_base, audit_labels
 
 D = os.path.join(ROOT, 'data', 'scidocs')
 T = os.path.join(ROOT, 'data', 'training')
@@ -124,6 +125,26 @@ def main():
     c_fmt = rows_cos(ef_clf, ef_rgn)
     print(f'[F2] cos(clf,rgn) trained={c_fmt:.4f}  < 0.9  (基线 0.9992)')
     checks.append(('F2', c_fmt < 0.9))
+
+    # G: 测量协议自检 —— 内联确定性小算例, 不依赖落盘产物。
+    #     标签与嵌入完全独立, 故零信号下 lift 分布应覆盖 1。
+    g_rng = np.random.default_rng(2026)
+    g_labels = np.repeat(np.arange(4), 50)          # 200 篇, 4 个均匀社区
+    g_E = g_rng.normal(size=(200, 16))
+    g_res = audit_labels(g_E, g_labels, g_rng, top_k=5, block_size=64,
+                         mc_trials=40000, perm_trials=300)
+    g1 = (abs(analytic_base(np.array([0, 0, 1, 1])) - 1.0 / 3.0) < 1e-12
+          and g_res["base_excl"] < g_res["base_incl"])
+    g2 = abs(g_res["base_excl"] - g_res["mc_base"]) < 0.02
+    g3 = abs(g_res["perm"]["mean"] - 1.0) < 0.15
+    g4 = bool(g_res["perm"]["p2_5"] <= 1.0 <= g_res["perm"]["p97_5"])
+    g_ok = g1 and g2 and g3 and g4
+    print('[G ] exact=%s  analytic~mc=%s  perm_mean~1=%s  CI_covers_1=%s' %
+          (g1, g2, g3, g4))
+    print('[G ] base_excl=%.4f base_incl=%.4f mc=%.4f perm_mean=%.4f CI=[%.3f,%.3f]' %
+          (g_res["base_excl"], g_res["base_incl"], g_res["mc_base"],
+           g_res["perm"]["mean"], g_res["perm"]["p2_5"], g_res["perm"]["p97_5"]))
+    checks.append(('G', g_ok))
 
     print('VERDICT:', 'PASS' if all(v for _, v in checks) else 'FAIL')
     sys.exit(0 if all(v for _, v in checks) else 1)
