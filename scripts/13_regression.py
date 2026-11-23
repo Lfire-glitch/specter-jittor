@@ -13,6 +13,12 @@
       —— 证明「冻结主体、只训控制码」的梯度 mask 生效, 且无 NaN/Inf
   F2. 用训后权重在同一 8 篇上 cos(clf,rgn) < 0.9 —— 方向建立
       (基线 0.9992; max_len=96 与 16_train_fmt.py 的验证口径一致)
+  G. 测量协议自检(共用 src/data/audit.py): 内联确定性小算例验解析式精确值 /
+     base_excl<base_incl / analytic≈MC / 置换均值≈1 / 区间覆盖 1;
+     不依赖任何被 gitignore 排除的产物。
+  H. CCQGen/CCExpand 协议自检(共用 src/data/concept.py): 内联确定性小算例验
+     pi 归一化 / 覆盖并集单调 / 已覆盖降权 / z-score 融合救回概念对齐 query /
+     argmax>base>mean; 不引入 retriever 或测试集, 不改变 A~G 归档数字。
 """
 import json
 import os

@@ -1,8 +1,20 @@
+"""18 与 G 闸共用的测量协议: top-K 同社区率 + 随机基线 + 置换区间。
+
+口径必须一致, 否则 lift 会系统性偏移: topk_same_rate 逐 query 取 cosine
+top-K 并排除自身, 故基线必须是「随机抽两篇不同论文同社区」=
+(sum(n_c^2) - n)/(n(n-1))。旧式 sum((n_c/n)^2) 允许抽到自己, 会高估
+(1-base)/(n-1), 只作记录项(analytic_base_in)。mc_base 排除自配对 a!=b。
+置换检验随机打乱标签(社区大小不变), 得零信号下的 lift 分布; 以
+base_excl 为分母时该分布均值应为 1, 这本身就是口径自检。
+"""
+
 import numpy as np
+# 权威口径: 随机两篇【不同】论文同社区的精确概率(排除自身)
 def analytic_base(labels):
     cnt=np.bincount(labels).astype(np.float64)
     n=int(cnt.sum())
     return float((cnt*cnt).sum()-n)/(n*(n-1))
+# 记录项: 旧口径 sum((n_c/n)^2)(允许抽到自己), 不作判据
 def analytic_base_in(labels):
     cnt=np.bincount(labels).astype(np.float64)
     p=cnt/cnt.sum()
@@ -11,10 +23,12 @@ def mc_base(labels, trials, rng):
     n = len(labels)
     a = rng.integers(0, n, trials)
     b = rng.integers(0, n, trials)
+    # 排除自配对, 与解析式 / top-K 三点同抽样框
     keep = a != b
     return float((labels[a[keep]] == labels[b[keep]]).mean())
 def rate_from_top_idx(labels, top_idx):
     return float((labels[top_idx] == labels[:, None]).mean())
+# 分块 cosine top-K; 返回 top_idx 缓存供置换检验复用, 避免重复矩阵乘
 def topk_same_rate(E, labels, top_k=10, block_size=256):
 
     n = E.shape[0]
@@ -24,9 +38,11 @@ def topk_same_rate(E, labels, top_k=10, block_size=256):
         e = min(s + block_size, n)
         sim = En[s:e] @ En.T
         for j, qi in enumerate(range(s, e)):
+            # 排除自身: 把自己那位置成绝不可能入选的低相似度
             sim[j, qi] = -2.0
             top_idx[qi] = np.argsort(-sim[j])[:top_k]
     return rate_from_top_idx(labels, top_idx), top_idx
+# 随机置换标签 -> 零信号 lift 分布(社区大小不变)
 def permutation_lifts(labels, top_idx, base_excl, trials, rng):
     n = len(labels)
     vals = np.empty(trials, np.float64)
@@ -34,14 +50,17 @@ def permutation_lifts(labels, top_idx, base_excl, trials, rng):
         lab = labels[rng.permutation(n)]
         vals[t] = rate_from_top_idx(lab, top_idx) / base_excl
     return vals
+# 单组标签完整测量: rate / 两种基线 / lift / 置换区间
 def audit_labels(E, labels, rng, top_k=10, block_size=256,mc_trials=200000, perm_trials=1000):
     labels = np.asarray(labels)
     rate, top_idx = topk_same_rate(E, labels, top_k, block_size)
     base_excl = analytic_base(labels)
     base_incl = analytic_base_in(labels)
     mc = mc_base(labels, mc_trials, rng)
+    # 用排除自身基线作分母(权威口径)
     lift = rate / base_excl
     vals = permutation_lifts(labels, top_idx, base_excl, perm_trials, rng)
+    # 每组自己的 95% 区间, 不共用 L1 区间(细粒度方差更大)
     p_lo = float(np.percentile(vals, 2.5))
     p_hi = float(np.percentile(vals, 97.5))
     return {

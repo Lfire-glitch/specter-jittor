@@ -1,3 +1,13 @@
+"""M6 / 17 —— 受控两层 planted 社区图 + Leiden 两级 CPM 分区。
+
+真实引文图不可得(截断片段 / 4421 孤儿), 故构造已知真值的两层随机连边图:
+L1=30 个大社区, 每 L1 内含 8 个 L2 子社区; 连边概率 P_IN>P_MID>P_OUT
+形成密度梯度。真跑 leidenalg.CPMVertexPartition 全局切 L1、每个 L1 内
+subgraph 再切 L2, gamma 按「社区数最接近真值规模」扫描选取。
+产出 communities.npz(标签) + logs/m6_communities.json(统计), 均被忽略。
+诚实边界: planted 图非论文 OpenAlex 引文社区, ARI 只作仪器自检, 绝对数字不外推。
+"""
+
 import json
 import os
 from collections import defaultdict
@@ -23,16 +33,19 @@ P_OUT = 0.002
 W_IN, W_MID, W_OUT = 1.0, 0.5, 0.2   
 MIN_SPLIT = 50      
 
+# CPM 的 gamma 是社区内密度阈值, 与图规模相关, 需扫描不能照搬论文
 GAMMAS = [1e-4, 1e-3, 3e-3, 1e-2, 3e-2, 1e-1, 3e-1]
 GAMMA2_CANDIDATES = [1e-3, 3e-3, 1e-2, 3e-2, 1e-1]
 TARGET_L2 = N_L1 * N_L2_PER_L1  
 
 
+# 随机抽两篇同社区的概率(允许抽到自己): sum((n_c/n)^2); 18 改用排除自身版
 def rand_base(sizes, n):
     s = np.asarray(sizes, 'float64') / n
     return float((s * s).sum())
 
 
+# 生成已知真值的 l1_true/l2_true: 30 个 L1, 每个均分 8 个 L2
 def build_planted(rng, n):
     l1_true = np.repeat(np.arange(N_L1), int(np.ceil(n / N_L1)))[:n].copy()
     rng.shuffle(l1_true)
@@ -48,6 +61,7 @@ def build_planted(rng, n):
     return l1_true, l2_true
 
 
+# L2 = 每个大 L1 内部再切 CPM; 层次切分而非全局重切
 def hierarchical_l2(g, l1, gamma2, min_split):
     n = len(l1)
     labels = np.empty(n, dtype=np.int64)
@@ -63,6 +77,7 @@ def hierarchical_l2(g, l1, gamma2, min_split):
             n_split += 1
             for sc in p2:
                 for v in sc:
+                    # subgraph 的局部下标 v 必须经 members 映射回全局
                     labels[members[v]] = nxt
                 nxt += 1
         else:
@@ -72,6 +87,7 @@ def hierarchical_l2(g, l1, gamma2, min_split):
     return labels, n_split
 
 
+# 三级密度: 同 L2 最密 / 同 L1 跨 L2 中等 / 跨 L1 最稀
 def build_edges(rng, n, l1_true, l2_true):
     ew = {}
 
@@ -153,6 +169,7 @@ def main():
         print('[g2scan] gamma2=%.0e  L2_comm=%d  ARI=%.4f' %
               (gamma2_try, len(set(lab.tolist())),
                adjusted_rand_score(l2_true, lab)), flush=True)
+    # 取舍点: 按「社区数对齐 240」选 gamma2(而非 ARI 最优), 见 docs/08
     gamma2 = min(g2_scan, key=lambda r: abs(r['l2_communities'] - TARGET_L2))['gamma2']
     l2, n_split = hierarchical_l2(g, l1, gamma2, MIN_SPLIT)
     print('[L2] gamma2=%.0e  comm=%d  split_L1=%d  ARI_vs_truth=%.4f' %
@@ -176,6 +193,7 @@ def main():
         'l1_ari_vs_truth': float(adjusted_rand_score(l1_true, l1)),
         'l2_ari_vs_truth': float(adjusted_rand_score(l2_true, l2)),
         'base_l1': rand_base(s1, n), 'base_l2': rand_base(s2, n),
+        # 诚实边界随产物落盘, 防止把合成图误当真实引文图
         'note': 'planted partition, NOT a real citation graph; absolute numbers not comparable',
     }
     json.dump(stats, open(os.path.join(LOG_DIR, 'm6_communities.json'), 'w'), indent=2)

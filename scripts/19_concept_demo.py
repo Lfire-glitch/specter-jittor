@@ -1,3 +1,14 @@
+"""M7 / 19 —— CCQGen/CCExpand 纯确定性技术演示(独立只读, 零侵入)。
+
+不新增 retriever、不引测试集、不跑 R@K/NDCG/MAP、不微调、不报任何
+检索增益数字; 只把论文里「概念索引如何调度生成与匹配」的纯确定性
+算子端到端跑一遍并做方向断言。五段: 3.1 子树均值/distinctiveness/
+top20%/k_p 截断 -> 4.1 pi 覆盖闭环 -> 4.3 z-score 融合过滤 ->
+5.2 argmax vs mean -> LLM fixture/stub 接口占位。
+产出 logs/concept_demo.json(被忽略)。绝对数字只作机制断言,
+不与论文 Table 1/5 比较、不外推。诚实边界见落盘 note。
+"""
+
 import json
 import os
 import sys
@@ -19,6 +30,7 @@ K_P = 20
 M = 4
 EPS = 1e-3
 ALPHAS = [0.0, 0.25, 0.5, 0.75, 1.0]
+# 受控人造语料: 96 个通用高频 phrase(df=N) + 24 个低 df 区分性 phrase
 def build_fixture():
     rng = np.random.default_rng(SEED)
     phrase_emb = rng.normal(size=(N_PHR, DIM))
@@ -32,6 +44,7 @@ def build_fixture():
 def main():
     doc_emb, phrase_emb, groups, df = build_fixture()
     rng = np.random.default_rng(SEED + 1)
+    # 段1 3.1 索引构造: 子树均值 -> distinctiveness -> top20% -> k_p=20 截断
     node_s, phrase_s = subtree_scores(doc_emb, phrase_emb, groups)
     disc = distinctiveness(df, N_DOCS)
     mask = top_fraction_mask(disc, TOP_FRAC)
@@ -51,6 +64,7 @@ def main():
         and universal_zero
         and bool((y_d[~allowed] == 0.0).all())
     )
+    # 段2 4.1 覆盖闭环: 每轮 floor(k_p/M) 个, 累积 y_q 后 pi 推向未覆盖项
     rec, y_q, used = coverage_rounds(y_d, K_P, M, rng, EPS, allowed)
     unions = [r["union"] for r in rec]
     pi_sums = [r["pi_sum"] for r in rec]
@@ -72,9 +86,11 @@ def main():
         and float(pi_after[first].mean()) < float(pi_before[first].mean())
         and float(pi_after[rest].mean()) > float(pi_before[rest].mean())
     )
+    # 4.2 query 生成用模板 stub 替代 LLM, 不调用任何模型
     q_stub = stub_query(first.tolist(), tag="concept-aligned")
     s_text = np.array([0.90, 0.50, 0.20], dtype=np.float64)
     s_concept = np.array([0.10, 0.95, 0.30], dtype=np.float64)
+    # 段3 4.3 融合: 「词汇不匹配但概念对齐」的 query 应被 z-score 融合救回
     keep, fused = consistency_filter(s_text, s_concept, top_n=1)
     text_top1 = int(np.argmax(s_text))
     fused_top1 = int(keep[0])
@@ -86,6 +102,7 @@ def main():
     base = 0.3313
     sims = np.array([0.3124, 0.3412], dtype=np.float64)
     b_mean = snippet_evidence(sims, "mean")
+    # 段4 5.2: max 保住概念峰值, mean 稀释; 复现表5反例机制方向
     b_max = snippet_evidence(sims, "max")
     s_star = best_snippet(sims)
     alpha_scan = []
@@ -102,7 +119,9 @@ def main():
         and relevance(base, b_mean, 0.5) < base
         and s_star == 1
     )
+    # 5.1 snippet 生成同样用固定模板 stub
     snippet_stub = stub_snippet("D0", q_stub, first.tolist()[:3])
+    # 四条方向判据; 全部通过才 PASS
     checks = [
         {"name": "index: subtree/distinctiveness/top20/kp", "ok": bool(idx_ok)},
         {"name": "coverage: pi normalized + union monotone + covered down", "ok": bool(cov_ok)},

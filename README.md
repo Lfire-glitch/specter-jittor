@@ -32,6 +32,7 @@
 | M5 第二课 格式方向 | ✅ 2026-11-20 | `docs/07_m5_train.md`：冻结主体只训 row2/3，cos(clf,rgn) 0.9992 → 0.6319，七闸回归 PASS |
 | M6 审计协议 | ✅ 2026-11-22 | `docs/08_m6.md`：17 受控建图 + 17b 引文增强三层消融 + 18 测量协议；阴性 lift 0.92~0.96 落各自置换 CI、MAG 阳性 9.98，八闸回归 PASS |
 | M7 概念路由技术演示 | ✅ 2026-11-23 | `docs/09_concept_demo.md`：19 纯确定性 demo（π 覆盖闭环 / z-score 融合 / argmax vs mean）PASS，13 九闸回归 PASS；LLM 与测试端均不动 |
+| M8 最终收口 / Jittor 边界 | ✅ 2026-11-23 | `docs/10_jittor_boundary.md`：17/17b/18/19 关键注释补齐（AST 零逻辑改动）；L1 把 concept 三个纯算子改 `jt.Var`，19 + 13 回归 PASS、归档数字逐位不变 |
 
 注：表内 M3/M4 为本表早期顺序编号；`docs/04`、`docs/05` 按任务 ①/② 叙述，
 对应的 ① = 三接口收敛、② = SciNCL 环带采样。
@@ -40,6 +41,9 @@ M6 因真实引文图稀疏（BC=1 / CC=8 边、4421/4500 孤儿）降级为受�
 社区是 4500 节点、非论文 10 万 CS 子图；下 OpenAlex 全表不在轻量纪律内。
 M7 复现的是概念索引的调度机制，不是生成质量或检索增益；4 处 LLM 环节用 fixture/stub，
 不新增 retriever、不引测试集、不跑 NDCG/R@K/MAP，定级低于 M4 的「部分完成」。
+M8 明确「全项目用 Jittor」的边界：Jittor 覆盖模型/训练/可学习参数侧，
+评测/图/IO 是合规仪器层；L1 仅象征性把 concept 三个纯算子接入 `jt.Var`（float32 入图 +
+numpy 收尾重归一），不改任何归档数字。逐文件判读与 L0~L3 分级见 `docs/10_jittor_boundary.md`。
 
 ## 重要更正
 

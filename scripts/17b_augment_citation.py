@@ -1,3 +1,15 @@
+"""M6 / 17b —— 引文增强(direct + BC + CC)算子与三层消融。
+
+论文 3.2 的增强图来自 OpenAlex 全表 2.5B 条引文边; 本地真实
+references/cited_by 是截断片段, 实测 BC=1 边 / CC=8 边 / 合图 4421 孤儿,
+Leiden 在任何 gamma 下只能切出单例社区。本脚本用「受控合成引文」把
+BC/CC 倒排 + Salton 加权 + 三层叠加这条因果链端到端真跑一遍,
+并做 direct / +BC / +BC+CC 三层消融, 让两级 CPM 有可分区的输入。
+产出 augmented.npz + logs/m6_augment_ablation.json, 均被忽略。
+诚实边界: 合成 token 按真值社区生成, ARI=1 是设计出的可分性,
+不代表分区算法能力或论文效果; 合成引文 NOT OpenAlex。
+"""
+
 import json
 import os
 from collections import defaultdict
@@ -21,6 +33,7 @@ GAMMAS1 = [1e-4, 1e-3, 1e-2]
 GAMMAS2 = [1e-3, 1e-2, 1e-1]
 TARGET_L1, TARGET_L2 = 30, 240
 MIN_SPLIT = 50
+# 三级 token 池: L2 私有(最密) / L1 私有(中) / 全局噪声(最稀), 造密度梯度
 def build_synthetic(ids,l1_true,l2_true,idx):
     n=len(ids)
     rng=np.random.default_rng(SEED)
@@ -48,9 +61,11 @@ def build_synthetic(ids,l1_true,l2_true,idx):
             if j!=i:
                 refs[i].add(ids[j])
                 cits[j].add(ids[i])
+    # 只用池外 id 做倒排: 池内 id 归 direct 层, 混入会污染三层消融
     ext_refs=[set(x for x in s if x not in idx) for s in refs]
     ext_cits=[set(x for x in s if x not in idx) for s in cits]
     return refs,cits,ext_refs,ext_cits
+# direct 层: refs|cits 中落在语料内的 id 建无向边(最稀疏)
 def direct_edges(refs,cits,idx,n):
     e={}
     for i in range(n):
@@ -61,6 +76,7 @@ def direct_edges(refs,cits,idx,n):
             a,b=(i,j)if i<j else (j,i)
             e[(a,b)]=e.get((a,b),0.0)+1.0
     return e
+# BC/CC 共用倒排: 外部 id -> 共享该 id 的论文对, sh>=min_shared 才建边
 def inverted(sets,cap,min_shared):
     inv=defaultdict(list)
     for i,s in enumerate(sets):
@@ -79,6 +95,7 @@ def inverted(sets,cap,min_shared):
     for (i,j),sh in pair.items():
         if sh<min_shared:
             continue
+        # Salton 余弦权重 sh/sqrt(|S_i||S_j|), 消除参考文献数量差异
         den=(len(sets[i])*(len(sets[j])))**0.5
         if den>0:
             e[(i,j)]=sh/den
@@ -118,15 +135,18 @@ def main():
     layers, inv_info = {}, {}
     e = direct_edges(refs, cits, idx, n)
     layers["direct"] = dict(e)
+    # +BC: 共同参考文献边叠加到同一 edge_w dict
     bc, nb, hb = inverted(ext_refs, CAP, MIN_SHARED)
     inv_info["BC"] = {"inv_keys": nb, "hot": hb, "edges": len(bc)}
     for k, v in bc.items():
         e[k] = e.get(k, 0.0) + v
     layers["+BC"] = dict(e)
+    # +CC: 共同被引边; 与 BC 是同一函数、不同输入
     cc, nc, hc = inverted(ext_cits, CAP, MIN_SHARED)
     inv_info["CC"] = {"inv_keys": nc, "hot": hc, "edges": len(cc)}
     for k, v in cc.items():
         e[k] = e.get(k, 0.0) + v
+    # 三层各存一次快照, 保证消融互不串改
     layers["+BC+CC"] = dict(e)
     report = {
         "n": n, "seed": SEED,
@@ -180,6 +200,7 @@ def main():
              edge_a=np.array([k[0] for k in aug["keys"]]),
              edge_b=np.array([k[1] for k in aug["keys"]]),
              weights=np.array(aug["weights"]))
+    # 诚实边界随日志落盘
     report["note"] = ("synthetic citations, NOT OpenAlex; ARI=1 is designed "
                       "separability, not algorithm capability or paper result")
     json.dump(report, open(os.path.join(LOG_DIR, "m6_augment_ablation.json"), "w"), indent=2)
