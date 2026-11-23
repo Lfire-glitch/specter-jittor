@@ -26,6 +26,9 @@ sys.path.insert(0, ROOT)
 from src.model.encoder import PaperEncoder
 from src.data.triplets import build_triplets
 from src.data.audit import analytic_base, audit_labels
+from src.data.concept import (
+    coverage_pi, coverage_rounds, fuse_scores, relevance, snippet_evidence,
+)
 
 D = os.path.join(ROOT, 'data', 'scidocs')
 T = os.path.join(ROOT, 'data', 'training')
@@ -145,7 +148,39 @@ def main():
           (g_res["base_excl"], g_res["base_incl"], g_res["mc_base"],
            g_res["perm"]["mean"], g_res["perm"]["p2_5"], g_res["perm"]["p97_5"]))
     checks.append(('G', g_ok))
-
+    
+    h_rng = np.random.default_rng(2027)
+    h_y = np.ones(6, dtype=np.float64)
+    h_allow = np.ones(6, dtype=bool)
+    h_rec, _, h_used = coverage_rounds(h_y, 6, 3, h_rng, 1e-3, h_allow)
+    h_union = [r["union"] for r in h_rec]
+    h1 = (
+        all(abs(r["pi_sum"] - 1.0) < 1e-12 for r in h_rec)
+        and all(h_union[i] < h_union[i + 1] for i in range(len(h_union) - 1))
+        and int(h_used.sum()) == 6
+    )
+    h_yq = np.array([1.0, 1.0, 0.0, 0.0, 0.0, 0.0])
+    h_pi0 = coverage_pi(h_y, np.zeros(6), 1e-3)
+    h_pi1 = coverage_pi(h_y, h_yq, 1e-3)
+    h2 = bool(h_pi1[:2].mean() < h_pi0[:2].mean()
+              and h_pi1[2:].mean() > h_pi0[2:].mean())
+    h_text = np.array([0.90, 0.50, 0.20])
+    h_concept = np.array([0.10, 0.95, 0.30])
+    h_fused = fuse_scores(h_text, h_concept)
+    h3 = bool(int(np.argmax(h_text)) == 0 and int(np.argmax(h_fused)) == 1)
+    h_base = 0.3313
+    h_sims = np.array([0.3124, 0.3412])
+    h_max = snippet_evidence(h_sims, "max")
+    h_mean = snippet_evidence(h_sims, "mean")
+    h4 = bool(h_max > h_base > h_mean
+              and relevance(h_base, h_max, 0.5) > h_base
+              and relevance(h_base, h_mean, 0.5) < h_base)
+    h_ok = h1 and h2 and h3 and h4
+    print('[H ] coverage=%s  pi_shift=%s  fuse=%s  argmax=%s' %
+          (h1, h2, h3, h4))
+    print('[H ] union=%s  mean=%.4f  base=%.4f  max=%.4f' %
+          (h_union, h_mean, h_base, h_max))
+    checks.append(('H', h_ok))
     print('VERDICT:', 'PASS' if all(v for _, v in checks) else 'FAIL')
     sys.exit(0 if all(v for _, v in checks) else 1)
 
