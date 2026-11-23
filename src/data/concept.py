@@ -1,16 +1,33 @@
 import numpy as np
-def l2norm(x,eps=1e-12):
-    x=np.asarray(x,dtype=np.float64)
-    return x/np.maximum(np.linalg.norm(x,axis=-1,keepdims=True),eps)
-def subtree_scores(doc_emb,phrase_emb,groups):
-    d=l2norm(doc_emb)
-    p=l2norm(phrase_emb)
-    centers=l2norm(np.stack([p[g].mean(axis=0) for g in groups]))
-    node=d@centers.T
-    phrase=np.zeros((d.shape[0],p.shape[0]),dtype=np.float64)
-    for c,g in enumerate(groups):
-        phrase[:,g]=node[:,c:c+1]
-    return node ,phrase
+import jittor as jt
+jt.flags.use_cuda = 0 
+def _to_jt(x):
+    return jt.array(np.asarray(x, dtype=np.float32))
+def _from_jt(v):
+    return np.asarray(v.numpy(), dtype=np.float64)
+def _jt_clamp_min(v, eps):
+    e = jt.array(np.full(v.shape, float(eps), dtype=np.float32))
+    return jt.where(v > e, v, e)
+def l2norm(x, eps=1e-12):
+    v = _to_jt(x)
+    sq = (v * v).sum(-1)
+    norm = (sq ** 0.5).reshape((-1, 1))
+    den = _jt_clamp_min(norm, eps)
+    return _from_jt(v / den)
+def subtree_scores(doc_emb, phrase_emb, groups):
+    d = l2norm(doc_emb)
+    p = l2norm(phrase_emb)
+    centers = l2norm(np.stack([p[g].mean(axis=0) for g in groups]))
+    a, b = _to_jt(d), _to_jt(centers.T)
+    try:
+        node_v = a @ b
+    except Exception:
+        node_v = jt.matmul(a, b) 
+    node = _from_jt(node_v)
+    phrase = np.zeros((d.shape[0], p.shape[0]), dtype=np.float64)
+    for c, g in enumerate(groups):
+        phrase[:, g] = node[:, c:c + 1]
+    return node, phrase
 def distinctiveness(df,n_docs):
     df=np.clip(np.asarray(df,dtype=np.float64),1.0,float(n_docs))
     return np.log(float(n_docs)/df)
@@ -35,11 +52,11 @@ def truncate_distribution(pi,k_p,mask=None):
         raise ValueError("truncate_distribution: all mass is zero")
     pi=pi/s
     return pi,np.flatnonzero(pi>0.0)
-def coverage_pi(y_d,y_q,eps=1e-3):
-    y_d=np.asarray(y_d,dtype=np.float64)
-    y_q=np.asarray(y_q,dtype=np.float64)
-    gap=np.maximum(y_d-y_q,eps)
-    return gap/gap.sum()
+def coverage_pi(y_d, y_q, eps=1e-3):
+    yd, yq = _to_jt(y_d), _to_jt(y_q)
+    gap = _jt_clamp_min(yd - yq, eps)
+    pi = _from_jt(gap / gap.sum())
+    return pi / pi.sum()
 def sample_round(pi,q,rng,blocked=None):
     pi=np.asarray(pi,dtype=np.float64).copy()
     if blocked is not None:
